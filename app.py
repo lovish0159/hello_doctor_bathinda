@@ -5,26 +5,19 @@ import psycopg2
 
 app = Flask(__name__)
 
-# Cloud Server test karan layi Home Page
 @app.route("/", methods=['GET'])
 def home():
     return "✅ Hello Doctor Bathinda da Server Cloud te bilkul sahi chal reha hai!"
 
-# Neon.tech Database Connection
 def get_db_connection():
-    # Asli link ki jagah hum os.environ ka use kar rahe hain
-    # Yeh password ko code mein nahi, balki server ki settings se uthayega
     DATABASE_URL = os.environ.get("DATABASE_URL")
-    
     if not DATABASE_URL:
         raise ValueError("❌ DATABASE_URL set nahi hai! Kripya environment variables check karein.")
-        
     return psycopg2.connect(DATABASE_URL)
 
 @app.route("/whatsapp", methods=['POST'])
 def whatsapp_bot():
     incoming_msg = request.values.get('Body', '').strip()
-    # 'whatsapp:' prefix nu hatana
     sender_number = request.values.get('From', '').replace('whatsapp:', '') 
 
     resp = MessagingResponse()
@@ -34,17 +27,14 @@ def whatsapp_bot():
     cursor = conn.cursor()
 
     try:
-        # Step 1: Check patient status
         cursor.execute("SELECT full_name FROM patients WHERE phone_number = %s", (sender_number,))
         patient = cursor.fetchone()
 
         if patient:
             patient_name = patient[0]
             
-            # Step 2: Name update logic
             if patient_name == "Naya Mareez":
                 real_name = incoming_msg.title()
-                
                 cursor.execute("UPDATE patients SET full_name = %s WHERE phone_number = %s", (real_name, sender_number))
                 conn.commit()
                 
@@ -58,17 +48,35 @@ def whatsapp_bot():
                 msg.body(success_text)
                 
             else:
-                # Normal menu
-                welcome_back_text = (
-                    f"Sat Sri Akal *{patient_name}* ji! 🙏 \n\n"
-                    "Ajj tusi ki book karna chaunde ho?\n"
-                    "1️⃣ Appointment Book Karo 📅\n"
-                    "2️⃣ Test ya Ultrasound Book Karo 🧪"
-                )
-                msg.body(welcome_back_text)
+                # NAYA LOGIC ITHE HAI (1 ya 2 da jawab)
+                if incoming_msg == '1':
+                    cursor.execute(
+                        "INSERT INTO appointments (patient_phone, appointment_type) VALUES (%s, %s)",
+                        (sender_number, "Doctor Appointment")
+                    )
+                    conn.commit()
+                    msg.body("✅ Tuhadi *Doctor Appointment* successfully book ho gayi hai! 🏥\nSada staff tuhanu jaldi hi time confirm karega.")
+                
+                elif incoming_msg == '2':
+                    cursor.execute(
+                        "INSERT INTO appointments (patient_phone, appointment_type) VALUES (%s, %s)",
+                        (sender_number, "Test/Ultrasound")
+                    )
+                    conn.commit()
+                    msg.body("✅ Tuhada *Test/Ultrasound* successfully book ho gaya hai! 🧪\nSada staff tuhanu jaldi hi time confirm karega.")
+                
+                else:
+                    # Agar user ne 1 ya 2 ton ilawa kujh hor likheya hai
+                    welcome_back_text = (
+                        f"Sat Sri Akal *{patient_name}* ji! 🙏 \n\n"
+                        "Ajj tusi ki book karna chaunde ho?\n"
+                        "1️⃣ Appointment Book Karo 📅\n"
+                        "2️⃣ Test ya Ultrasound Book Karo 🧪\n\n"
+                        "(Kripya 1 ya 2 likh ke bhejo)"
+                    )
+                    msg.body(welcome_back_text)
         
         else:
-            # Step 3: New user registration
             cursor.execute(
                 "INSERT INTO patients (phone_number, full_name) VALUES (%s, %s)",
                 (sender_number, "Naya Mareez")
@@ -91,7 +99,6 @@ def whatsapp_bot():
 
     return str(resp)
 
-# Cloud server (Render) layi Port settings
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
