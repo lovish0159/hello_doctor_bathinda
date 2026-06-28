@@ -2,3 +2,4 @@ Flask==3.0.0
 twilio==8.10.3
 psycopg2-binary==2.9.9
 gunicorn
+google-generativeai
