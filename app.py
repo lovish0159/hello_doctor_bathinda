@@ -44,7 +44,7 @@ def get_main_menu(user_name):
         "Kripya 1, 2, 3 ya 4 likh kar reply karein."
     )
 
-# ----------------- WEB DASHBOARD (FRONTEND PAGE) -----------------
+# ----------------- WEB DASHBOARD (FEES UPDATE) -----------------
 HTML_PAGE = """
 <!DOCTYPE html>
 <html>
@@ -62,8 +62,9 @@ HTML_PAGE = """
                 <div class="col-md-6 mb-3"><label>Specialization (e.g., Cardiologist)</label><input type="text" name="specialization" class="form-control" required></div>
                 <div class="col-md-6 mb-3"><label>Hospital Name</label><input type="text" name="hospital_name" class="form-control" required></div>
                 <div class="col-md-6 mb-3"><label>Mobile Number</label><input type="text" name="mobile_number" class="form-control" required></div>
-                <div class="col-md-6 mb-3"><label>Address</label><input type="text" name="address" class="form-control" required></div>
-                <div class="col-md-6 mb-3"><label>Timing (e.g., 10 AM - 2 PM)</label><input type="text" name="timing" class="form-control" required></div>
+                <div class="col-md-4 mb-3"><label>Address</label><input type="text" name="address" class="form-control" required></div>
+                <div class="col-md-4 mb-3"><label>Timing</label><input type="text" name="timing" class="form-control" required></div>
+                <div class="col-md-4 mb-3"><label>Consultation Fees (₹)</label><input type="text" name="consultation_fees" class="form-control" required></div>
             </div>
             <button type="submit" class="btn btn-primary w-100">Add Doctor to System</button>
         </form>
@@ -73,13 +74,13 @@ HTML_PAGE = """
     <table class="table table-bordered table-striped mt-3">
         <thead class="table-dark">
             <tr>
-                <th>ID</th><th>Name</th><th>Specialization</th><th>Hospital</th><th>Mobile</th><th>Timing</th>
+                <th>ID</th><th>Name</th><th>Specialization</th><th>Hospital</th><th>Mobile</th><th>Timing</th><th>Fees</th>
             </tr>
         </thead>
         <tbody>
             {% for doc in doctors %}
             <tr>
-                <td>{{ doc[0] }}</td><td>{{ doc[1] }}</td><td>{{ doc[2] }}</td><td>{{ doc[3] }}</td><td>{{ doc[4] }}</td><td>{{ doc[6] }}</td>
+                <td>{{ doc[0] }}</td><td>{{ doc[1] }}</td><td>{{ doc[2] }}</td><td>{{ doc[3] }}</td><td>{{ doc[4] }}</td><td>{{ doc[6] }}</td><td>₹{{ doc[7] }}</td>
             </tr>
             {% endfor %}
         </tbody>
@@ -93,17 +94,15 @@ def dashboard():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Jab admin naya doctor add kare
     if request.method == 'POST':
         cursor.execute("""
-            INSERT INTO doctors (name, specialization, hospital_name, mobile_number, address, timing)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO doctors (name, specialization, hospital_name, mobile_number, address, timing, consultation_fees)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (request.form['name'], request.form['specialization'], request.form['hospital_name'], 
-              request.form['mobile_number'], request.form['address'], request.form['timing']))
+              request.form['mobile_number'], request.form['address'], request.form['timing'], request.form['consultation_fees']))
         conn.commit()
 
-    # Doctors ki list show karne ke liye
-    cursor.execute("SELECT * FROM doctors ORDER BY id DESC")
+    cursor.execute("SELECT id, name, specialization, hospital_name, mobile_number, address, timing, consultation_fees FROM doctors ORDER BY id DESC")
     doctors_list = cursor.fetchall()
     
     cursor.close()
@@ -149,16 +148,15 @@ def whatsapp_bot():
                 conn.commit()
                 msg.body(f"✅ Aapki profile successfully ban gayi hai.\n\n{get_main_menu(real_name)}")
             
-            # 2. AI Doctor Suggestion + Specific Filtering
+            # 2. AI Doctor Suggestion
             elif step == 'ASKING_PROBLEM':
                 spec_suggestion = get_doctor_suggestion(incoming_msg)
                 
-                # Check if we have this specialist in our database
-                cursor.execute("SELECT id, name, specialization, timing FROM doctors WHERE specialization ILIKE %s", (f"%{spec_suggestion}%",))
+                cursor.execute("SELECT id, name, specialization, timing, consultation_fees FROM doctors WHERE specialization ILIKE %s", (f"%{spec_suggestion}%",))
                 matching_doctors = cursor.fetchall()
                 
                 if matching_doctors:
-                    doc_list = "\n".join([f"{d[0]}️⃣ {d[1]} ({d[3]})" for d in matching_doctors])
+                    doc_list = "\n".join([f"{d[0]}️⃣ {d[1]} ({d[3]}) - Fees: ₹{d[4]}" for d in matching_doctors])
                     cursor.execute("UPDATE patients SET session_step = 'CHOOSING_DOCTOR' WHERE phone_number = %s", (sender_number,))
                     conn.commit()
                     msg.body(
@@ -174,7 +172,7 @@ def whatsapp_bot():
                         "Maaf karein, is specialization ke doctor filhal system mein nahi hain. Kripya OPD aakar sampark karein. '0' daba kar menu par jayein."
                     )
 
-            # 3. Choosing a specific Doctor from List
+            # 3. Choosing a Doctor
             elif step == 'CHOOSING_DOCTOR':
                 cursor.execute("SELECT name, timing FROM doctors WHERE id::text = %s", (incoming_msg,))
                 selected_doc = cursor.fetchone()
@@ -187,7 +185,7 @@ def whatsapp_bot():
                 else:
                     msg.body("❌ Kripya list mein se ek sahi number chunein, ya Menu ke liye '0' bhejein.")
 
-            # 4. Appointment/Test Booking Final
+            # 4. Appointment Booking Final
             elif step == 'WAITING_FOR_DATE':
                 booking_type = temp_data if temp_data else "Test/Ultrasound"
                 cursor.execute(
@@ -198,7 +196,7 @@ def whatsapp_bot():
                 conn.commit()
                 msg.body(f"✅ Aapki booking '{booking_type}' ke liye successfully save ho gayi hai! 🏥 Hamara staff aapse jald hi sampark karega.")
 
-            # 5. Help Menu / Name Change
+            # 5. Help Menu
             elif step == 'HELP_MENU':
                 if incoming_msg == '1':
                     cursor.execute("UPDATE patients SET session_step = 'CHANGING_NAME' WHERE phone_number = %s", (sender_number,))
@@ -213,7 +211,7 @@ def whatsapp_bot():
                 conn.commit()
                 msg.body(f"✅ Aapka naam update hokar '{new_name}' ho gaya hai.\n\n{get_main_menu(new_name)}")
 
-            # Main Menu Logic (IDLE State)
+            # Main Menu (IDLE State)
             else:
                 if incoming_msg == '1':
                     cursor.execute("UPDATE patients SET session_step = 'ASKING_PROBLEM' WHERE phone_number = %s", (sender_number,))
@@ -221,11 +219,10 @@ def whatsapp_bot():
                     msg.body("Kripya apni bimari ya dikkat detail mein likhein (Jaise: Mujhe aankhon mein dard aur jalan hai):")
                 
                 elif incoming_msg == '2':
-                    # SHOW ALL DOCTORS LIST
-                    cursor.execute("SELECT id, name, specialization FROM doctors")
+                    cursor.execute("SELECT id, name, specialization, consultation_fees FROM doctors")
                     all_docs = cursor.fetchall()
                     if all_docs:
-                        doc_list = "\n".join([f"{d[0]}️⃣ {d[1]} ({d[2]})" for d in all_docs])
+                        doc_list = "\n".join([f"{d[0]}️⃣ {d[1]} ({d[2]}) - ₹{d[3]}" for d in all_docs])
                         cursor.execute("UPDATE patients SET session_step = 'CHOOSING_DOCTOR' WHERE phone_number = %s", (sender_number,))
                         conn.commit()
                         msg.body(f"🏥 Hamare Doctors ki List:\n\n{doc_list}\n\nAppointment ke liye Doctor ka Number (jaise '1') bhejein:")
